@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- El enlace usa ws:// + UDP sin TLS, pero cada trama va cifrada con AES-256-GCM
+     (ver Crypto.kt). Android bloquea cleartext por defecto, asi que se permite aqui. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

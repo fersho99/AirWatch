@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AirWatch</string>
+    <string name="notif_channel">Sesión de air mouse</string>
+    <string name="notif_title">AirWatch activo</string>
+    <string name="notif_text">Controlando tu PC</string>
+    <string name="notif_stop">Detener</string>
+</resources>

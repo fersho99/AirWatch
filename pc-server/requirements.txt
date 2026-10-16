@@ -1,0 +1,4 @@
+cryptography>=42
+websockets>=13
+zeroconf>=0.132
+pynput>=1.7.7
