@@ -13,6 +13,5 @@ local.properties
 
 # Editor / SO
 .vscode/
-.claude/
 .DS_Store
 Thumbs.db

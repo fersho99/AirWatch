@@ -1,6 +1,8 @@
-# AirWatch — Galaxy Watch 8 como air mouse (Etapa 1)
+# AirWatch — Galaxy Watch 8 como air mouse y control de presentaciones (Etapas 1–3)
 
 Etapa 1 = conexión Wi-Fi cifrada + movimiento del cursor + clics básicos y scroll.
+Etapa 3 = modo presentación (diapositivas con «toque + deslizar», láser en pantalla, temporizador con vibración, notas, perfiles por aplicación).
+Etapa 2 = asistente de configuración (muñeca y ejes medidos), gestos de muñeca (clic, clic derecho, arrastrar), scroll inclinando la mano y compensación del sacudón.
 Gestos de muñeca (Etapa 2), modo presentación (3) y puente móvil / Bluetooth HID (4) vienen después.
 
 ```
@@ -102,16 +104,78 @@ La app recuerda la última IP que funcionó.
 
 | Ajuste | Inicial | Rango | Si… |
 |---|---|---|---|
-| Sensibilidad | 1.0× (≈1200 px por radián) | 0.2–3.0 | El cursor es lento/rápido |
+| Sensibilidad | 2.0× (≈1200 px por radián ×2) | 0.2–3.0 | El cursor es lento/rápido |
 | Suavizado | 35 % | 0–90 % | Tiembla (sube) / se siente "pegajoso" (baja) |
 | Zona muerta | 0.06 rad/s | 0–0.30 | Se desliza solo en reposo (sube) / no responde a movimientos finos (baja) |
 | Aceleración | 0.4 | 0–2 | Quieres llegar rápido a las esquinas sin perder precisión fina |
 | Frecuencia de envío | 80 Hz | 60–100 | Más Hz = más suave pero más batería |
 | Invertir X / Y | No | — | El cursor se mueve al revés |
 
-Orientación asumida: reloj en muñeca izquierda, cara hacia arriba. Subir/bajar la mano mueve el cursor en vertical; girarla a izquierda/derecha lo mueve en horizontal. **Si algún eje sale invertido, usa Invertir X/Y** (los signos dependen de cómo uses el reloj).
+**Ejes:** desde la Etapa 2 ya no se suponen: el asistente (primer arranque, o *Calibrar muñeca*) mide en qué dirección gira el reloj cuando la mano va a la derecha / hacia abajo. El lado de la muñeca solo fija los valores previos a calibrar. Tras calibrar, *Invertir X/Y* queda en «No» (úsalo solo si aun así prefieres el cursor al revés).
 
 El giroscopio se auto-calibra (estima su sesgo cuando el reloj está quieto ~0.5 s), así que conviene empezar con la mano en reposo.
+
+## 4b. Etapa 2: asistente, gestos y scroll
+
+**Asistente** (8 pasos, ~2 min; se abre solo en el primer arranque y desde *Calibrar muñeca* / *Ajustes → Reconfigurar*):
+muñeca → mover la mano a la derecha (2 veces) → hacia abajo (2 veces) → girar el antebrazo hacia afuera (2 veces) → 5 s de movimiento libre sin gestos → 5 toques/pellizcos → 5 giros afuera → 5 giros adentro → resumen (*Guardar* / *Repetir todo*). Cada trazo debe repetirse en la misma dirección; si no, pide repetir. Los umbrales se ajustan a ti y se califican (bueno / regular / bajo). Los pasos de entrenamiento se pueden saltar (quedan los valores por defecto).
+
+**Gestos** (con la pantalla encendida y conectado), pensados para no hacer movimientos bruscos:
+
+| Gesto | Cómo se detecta | Acción por defecto |
+|---|---|---|
+| Toque / pellizco | Impulso del acelerómetro (> 1.5 m/s², pasa-altas 5 Hz) sin que el reloj esté girando rápido; se confirma 60 ms después | Clic izquierdo (inmediato, sin retraso) |
+| Doble toque | Segundo toque 0.25–0.6 s después del primero (el primero ya hizo clic) | Deja el botón presionado (seleccionar / arrastrar). **Cualquier toque lo suelta** |
+| Giro rápido hacia palma abajo | Giro del antebrazo (> 5 rad/s) en el sentido contrario a «palma arriba»; el regreso se ignora 450 ms | Clic derecho |
+| Palma arriba sostenida (> 35° durante 0.45 s, casi quieto) | Entra en modo scroll: el cursor se congela y subir/bajar la mano desplaza la página, más rápido cuanto más inclines. Vuelve a la postura neutra para salir | Scroll |
+| Giro rápido hacia palma arriba | Igual que el de palma abajo, sentido contrario | Nada (asignable, p. ej. doble clic) |
+
+El clic derecho y el scroll están en lados opuestos a propósito: poner la palma arriba despacio (scroll) no dispara el giro rápido. El scroll solo se activa con la palma arriba; con la palma abajo no pasa nada. Cada gesto se reasigna en *Ajustes → Gestos* (Nada, clic izq./der./central, doble clic, Atrás, Adelante, Arrastrar, Cambiar ventana = Alt+Tab, Centrar cursor, Pausar). Si dispara solo, sube el umbral; si no responde, bájalo. Al actualizar desde la versión anterior, las asignaciones de gestos se reinician a este mapa.
+
+**Sacudón:** al detectar un gesto el cursor se congela 350–500 ms y el PC deshace lo que el cursor se movió en los últimos 90 ms antes del clic (el ajuste viaja dentro del mismo mensaje del clic, así el orden está garantizado).
+
+**Batería:** tras 20 s sin moverte los sensores bajan a 20 Hz y los gestos esperan a que vuelvas a mover la mano para despertar; apagado automático a los 10 min.
+
+## 4c. Etapa 3: modo presentación
+
+**Cómo se usa:** reloj → *Modo presentación* (requiere estar conectado). En la PC, abre tu presentación y pulsa *⋯ → Iniciar presentación* (o inícialo tú). Mientras estás en este modo la mano **no mueve el mouse real**; solo mueve el láser (cuando lo enciendes). La pantalla del reloj se queda encendida (los gestos solo funcionan con la pantalla encendida).
+
+| Gesto / control | Acción por defecto |
+|---|---|
+| **Toque + deslizar la mano a la derecha** (o ▶, o girar corona/bisel) | Diapositiva siguiente |
+| **Toque + deslizar la mano a la izquierda** (o ◀, o girar al revés) | Diapositiva anterior |
+| Botón *Láser* (un toque enciende, otro apaga) | Láser. Se apaga solo tras 8 s sin mover la mano (ajustable) |
+| Toque solo, o movimiento solo | **Nada** (el toque solo muestra «Toque y desliza…»). Es la protección contra cambios accidentales |
+| Giros rápidos | Sin asignar (asignables en *Ajustes → Presentación*, p. ej. «Láser») |
+| *⋯ → Salir de la presentación* | Esc. **Pide repetir la acción en 2.5 s** (vibra dos veces la primera); lo mismo si asignas «Salir» a un gesto |
+| *⋯ → Ir a diapositiva* | Selector táctil (−10 −1 +1 +10) o girar la corona/bisel; *Ir* escribe el número y Enter |
+| *⋯ → Notas* | Resumen de la nota del orador (solo PowerPoint) |
+| *⋯ → Temporizador* | Duración (5–120 min), iniciar/pausa/reiniciar. *Iniciar presentación* arranca el cronómetro si está en cero |
+
+**Toque + deslizar:** tras el toque hay 0.6 s para mover la mano en horizontal más de 18° (ajustable en *Ajustes → Presentación → Deslizar tras el toque*); el sacudón del propio toque (primeros 60 ms) se ignora. El cambio llega ~0.2–0.4 s después del toque. Con el láser encendido, el punto se congela durante el deslizamiento para que no salte. El marcador (pluma) se quitó del reloj porque con la deriva natural de la mano rayaba toda la pantalla. El láser no se activa por gesto: así mover mucho las manos al explicar no lo enciende.
+
+**Temporizador:** vibra (sin sonido) a la mitad y a 5, 2 y 1 minuto del final, y al terminar: mitad = dos pulsos; 5 min = uno largo; 2 min = dos cortos; 1 min = tres cortos; fin = dos largos. Las alertas que no tienen sentido se omiten (charla de 10 min: la mitad ya es «faltan 5»; charla de 4 min: no hay «5 min»). Los pulsos del temporizador suenan aunque desactives la vibración de gestos.
+
+**Láser (en la PC):** una ventana transparente, siempre encima y que deja pasar los clics (Tkinter). Se activa con `python -m airwatch_server` (sin `--no-overlay`); si falla, el servidor sigue funcionando sin ella. Se apaga sola si se corta la conexión.
+
+**Diapositiva actual y total:** con **PowerPoint** se lee exacta por COM (`pywin32` se instala con `requirements.txt`; si falla, el resto funciona igual). Con el resto (Google Slides, PDF, Impress…) las aplicaciones no la exponen, así que el reloj la **estima contando** siguiente/anterior/ir a y la muestra con `~` (p. ej. `~3/?`). Puedes dar el total en *Ir a diapositiva → Total −/+*. Si navegas con el teclado de la PC, la estimación se desfasa; entonces usa *Ir a diapositiva* para reajustarla.
+
+**Perfil por aplicación:** la PC mira qué ventana tiene el foco (ejecutable y título) y traduce cada acción a los atajos de esa aplicación. El reloj muestra el perfil activo; *⋯ → Aplicación* lo fija a mano o vuelve a «Auto». Detección: `powerpnt.exe`; `soffice.bin`; `sumatrapdf.exe`; `acrobat.exe`/`acrord32.exe`; y en navegadores (Chrome, Edge, Firefox, Brave, Opera, Vivaldi) por el título: «Google Slides / Presentaciones de Google» → Google Slides, «.pdf» → PDF en navegador.
+
+### Atajos que envía la PC por aplicación
+
+| Acción | PowerPoint | Google Slides | LibreOffice Impress | Acrobat / Reader | SumatraPDF | PDF en navegador | Keynote (Mac, exp.) |
+|---|---|---|---|---|---|---|---|
+| Siguiente | → | → | → | Re Pág | → | Re Pág | → |
+| Anterior | ← | ← | ← | Av Pág | ← | Av Pág | ← |
+| Iniciar | F5 | Ctrl+F5 | F5 | Ctrl+L | F5 | F11 | Opción+Cmd+P |
+| Iniciar desde la actual | Shift+F5 | Ctrl+F5 ¹ | Shift+F5 ² | Ctrl+L | F5 | F11 | Opción+Cmd+P |
+| Salir | Esc | Esc | Esc | Esc | Esc | Esc | Esc |
+| Pantalla negra | B | B | B | — | . | — | — |
+| Pantalla blanca | W | W | W | — | W | — | — |
+| Ir a diapositiva N | N + Enter | N + Enter | N + Enter | Ctrl+Shift+N, N, Enter | Ctrl+G, N, Enter | — | — |
+
+¹ Google solo documenta Ctrl+F5 para presentar. ² Según la versión de LibreOffice. Fuentes: ayuda de Google Docs Editors (atajos de Slides), ayuda de LibreOffice (atajos de Impress), documentación de SumatraPDF, guía de atajos de PowerPoint y de Acrobat. **Keynote queda sin verificar** y no se detecta solo (la detección de ventana es solo para Windows): fija el perfil a mano. En otras apps, «Genérico» usa → ← F5 Shift+F5 Esc B W.
 
 ## 5. Protocolo y seguridad (resumen)
 
@@ -126,10 +190,17 @@ El giroscopio se auto-calibra (estima su sesgo cuando el reloj está quieto ~0.5
 cd pc-server
 python tools/e2e_test.py                         # servidor real (--dry-run) + reloj simulado
 python tools/interop/run_interop.py              # Crypto del reloj (JCA) ↔ Python (necesita java)
+python tools/presenter_test.py                   # perfiles, detección de app, puntero, diapositivas (COM falso)
+python tools/e2e_presentation.py                 # presentación de extremo a extremo (teclas, láser, desconexión)
+
+cd watch-app
+./run-logic-tests.sh                              # lógica pura del reloj con señales sintéticas (necesita kotlinc; KOTLINC=/ruta)
 ```
+`presenter_test.py` y `e2e_presentation.py` cubren el modo presentación (el láser se registra en lugar de dibujarse con `--dry-run`; la ventana de Tkinter y la lectura de PowerPoint real solo se pueden probar en tu PC).
+`run-logic-tests.sh` simula una muñeca (también prueba temporizador, confirmación y selector) (ejes girados, ruido, sesgo, temblor): comprueba que el asistente recupera los ejes, que 60 s de movimiento no disparan gestos, que toque/giros se detectan 10 de 10, el congelado del cursor, el historial de compensación y el scroll.
 `e2e_test.py` verifica: emparejamiento, coincidencia del SAS, cifrado, rechazo de dispositivos no emparejados, replay, tramas alteradas, suma exacta de movimientos y latencia UDP en loopback.
 
-## 7. Limitaciones conocidas de la Etapa 1
+## 7. Limitaciones conocidas
 
 - **JDK:** Gradle 8.11 no soporta Java 25 (el JBR de las versiones recientes de Android Studio). Compila con JDK 17 o 21 (`JAVA_HOME`, o *Settings → Build Tools → Gradle → Gradle JDK*).
 - Probado en un Galaxy Watch 8 con Windows 11. Los ejes del cursor pueden requerir *Invertir X/Y* según cómo lleves el reloj.
@@ -138,3 +209,10 @@ python tools/interop/run_interop.py              # Crypto del reloj (JCA) ↔ Py
 - Apagado automático tras 10 min sin actividad (fijo por ahora).
 - Un solo PC emparejado por reloj en esta etapa.
 - Bisel/corona: el Watch 8 **Classic** tiene bisel físico (scroll con el bisel); el Watch 8 sin bisel usa los botones ▲▼.
+- **Etapa 2 sin compilar en el entorno de desarrollo:** la lógica de gestos/asistente está probada en JVM, pero el código Android/Compose (`Engine.kt`, `Screens.kt`, `Prefs.kt`) se escribió sin SDK; si Gradle da errores, envíalos tal cual.
+- Los umbrales de gestos dependen de cada persona: repite el asistente si hay falsos disparos. Un toque justo tras 20 s de reposo puede no detectarse (sensores a 20 Hz); mueve la mano primero.
+- El PC solo acepta teclas de una lista fija (ctrl/alt/shift/win, flechas, F1–F12, letras, dígitos, etc.), máx. 4 a la vez.
+- **Etapa 3, sin probar en equipo real:** la ventana del láser (Tkinter) y la lectura de PowerPoint por COM se escribieron sin acceso a Windows/PowerPoint; se prueban con dobles falsos. Si PowerPoint en pantalla completa tapa el láser, dímelo. Solo se dibuja en el monitor principal.
+- La estimación de diapositiva fuera de PowerPoint se desfasa si navegas con el teclado o el mouse de la PC.
+- Faltan de la especificación original: **tile y complicación** de Wear (dependencia extra que no pude compilar aquí). Los visores de PDF del navegador solo tienen pantalla completa (sin pantalla negra ni «ir a diapositiva»).
+- El movimiento viaja por UDP y el aviso «encender láser» por WebSocket, sin orden entre sí: al activar el láser el cursor real puede moverse unos píxeles.

@@ -72,6 +72,19 @@ async def scenario(tmp: Path) -> None:
     await watch.send_ctrl({"t": "scroll", "h": 0, "v": -1})
     await watch.send_ctrl({"t": "recenter"})
 
+    print("[3b] Etapa 2: ajuste atomico con el clic, doble clic, atras, teclas, mensajes invalidos")
+    await watch.send_ctrl({"t": "btn", "b": "left", "s": "click", "adj": [-4, 3]})
+    await watch.send_ctrl({"t": "btn", "b": "left", "s": "double"})
+    await watch.send_ctrl({"t": "btn", "b": "back", "s": "click"})
+    await watch.send_ctrl({"t": "key", "k": ["alt", "tab"]})
+    await watch.send_ctrl({"t": "key", "k": ["format", "c"]})            # tecla fuera de la lista blanca
+    await watch.send_ctrl({"t": "key", "k": ["a", "a"]})                 # repetida
+    await watch.send_ctrl({"t": "key", "k": ["ctrl", "alt", "shift", "win", "x"]})  # demasiadas
+    await watch.send_ctrl({"t": "btn", "b": "bogus", "s": "click"})      # boton inexistente
+    await watch.send_ctrl({"t": "scroll", "h": "x", "v": None})          # malformado: no debe tumbar la sesion
+    await watch.send_ctrl({"t": "btn", "b": "right", "s": "click", "adj": "no-es-lista"})
+    await watch.send_ctrl({"t": "btn", "b": "left", "s": "down"})        # queda retenido: al desconectar se libera
+
     print("[4] Anti-replay y manipulacion")
     frame = watch.send_move(100, 100)           # legitimo (cuenta una vez)
     await asyncio.sleep(0.05)
@@ -100,12 +113,13 @@ def main() -> int:
             [sys.executable, "-m", "airwatch_server", "--dry-run", "--dry-run-log", str(tmp / "events.jsonl"),
              "--pair", "--no-mdns", "--unsafe-auto-confirm", "--port", str(TCP), "--udp-port", str(UDP)],
             env=env, stdout=log_f, stderr=subprocess.STDOUT, cwd=ROOT,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
         )
         try:
             wait_port(TCP)
             asyncio.run(scenario(tmp))
         finally:
-            srv.send_signal(signal.SIGINT)
+            srv.send_signal(getattr(signal, "CTRL_BREAK_EVENT", signal.SIGINT))
             try:
                 srv.wait(timeout=5)
             except subprocess.TimeoutExpired:
@@ -115,11 +129,23 @@ def main() -> int:
         events = [json.loads(l) for l in (tmp / "events.jsonl").read_text().splitlines()]
         summary = events[-1]
         print("[6] Resumen del servidor:", {k: summary[k] for k in ("moves", "dx", "dy")})
-        check(summary["moves"] == 301, "301 movimientos aplicados (300 + 1 legitimo; replay/manipulados/basura descartados)")
-        check(summary["dx"] == 300 * 3 + 100 and summary["dy"] == 300 * -2 + 100, "suma dx/dy exacta")
-        kinds = [(e["ev"], e.get("b"), e.get("s")) for e in events if e["ev"] != "move" and e["ev"] != "summary"]
-        check(kinds == [("button", "left", "down"), ("button", "left", "up"), ("scroll", None, None), ("recenter", None, None)],
-              f"eventos de control en orden: {kinds}")
+        check(summary["moves"] == 302, "302 movimientos (300 + 1 legitimo + 1 ajuste; replay/manipulados/basura descartados)")
+        check(summary["dx"] == 300 * 3 + 100 - 4 and summary["dy"] == 300 * -2 + 100 + 3, "suma dx/dy exacta (incluye el ajuste)")
+        kinds = [(e["ev"], e.get("b"), e.get("s")) for e in events if e["ev"] not in ("move", "summary")]
+        expected = [
+            ("button", "left", "down"), ("button", "left", "up"), ("scroll", None, None), ("recenter", None, None),
+            ("button", "left", "click"), ("button", "left", "double"), ("button", "back", "click"),
+            ("key", None, None),
+            ("button", "right", "click"),     # el 'adj' invalido se ignora pero el clic valido se ejecuta
+            ("button", "left", "down"),
+            ("button", "left", "up"),         # liberado por el servidor al desconectar
+        ]
+        check(kinds == expected, f"eventos de control en orden: {kinds}")
+        keys = [e["k"] for e in events if e["ev"] == "key"]
+        check(keys == [["alt", "tab"]], f"solo la combinacion valida llego al teclado: {keys}")
+        i = next(n for n, e in enumerate(events) if e["ev"] == "button" and e["s"] == "click" and e["b"] == "left")
+        check(events[i - 1] == {**events[i - 1], "ev": "move", "dx": -4, "dy": 3},
+              "el ajuste (-4,3) se aplica inmediatamente ANTES del clic")
         print("\nTODO OK")
         return 0
 

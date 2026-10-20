@@ -7,12 +7,39 @@ import time
 from typing import Protocol
 
 MAX_STEP = 2000  # px maximos por paquete (sanidad)
+MAX_COMBO = 4    # teclas maximas por combinacion
+
+BUTTONS = {"left", "right", "middle", "back", "forward"}
+BUTTON_STATES = {"down", "up", "click", "double"}
+
+# Lista blanca de teclas aceptadas desde el reloj (nombres en minusculas).
+_MODIFIERS = {"ctrl", "alt", "shift", "win"}
+_NAMED = {"tab", "esc", "enter", "space", "left", "right", "up", "down",
+          "page_up", "page_down", "home", "end"} | {f"f{i}" for i in range(1, 13)}
+_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789")
+ALLOWED_KEYS = _MODIFIERS | _NAMED | _CHARS
+
+
+def parse_keys(raw) -> list[str] | None:
+    """Valida una combinacion enviada por el reloj. Devuelve la lista normalizada o None."""
+    if not isinstance(raw, list) or not 1 <= len(raw) <= MAX_COMBO:
+        return None
+    keys: list[str] = []
+    for k in raw:
+        if not isinstance(k, str):
+            return None
+        k = k.strip().lower()
+        if k not in ALLOWED_KEYS or k in keys:
+            return None
+        keys.append(k)
+    return keys
 
 
 class Driver(Protocol):
     def move(self, dx: int, dy: int) -> None: ...
     def button(self, name: str, state: str) -> None: ...
     def scroll(self, h: int, v: int) -> None: ...
+    def key(self, keys: list[str]) -> None: ...
     def recenter(self) -> None: ...
     def close(self) -> None: ...
 
@@ -51,16 +78,29 @@ class PynputDriver:
                     ctypes.windll.user32.SetProcessDPIAware()
                 except Exception:
                     pass
+        from pynput.keyboard import Controller as KbController
+        from pynput.keyboard import Key
         from pynput.mouse import Button, Controller
 
         self._mouse = Controller()
+        self._kb = KbController()
+        # Atras/adelante: x1/x2 en Windows, button8/button9 en X11. Si no existen, se ignoran
+        # (nunca se convierten en clic izquierdo).
         self._buttons = {
             "left": Button.left,
             "right": Button.right,
             "middle": Button.middle,
-            "back": getattr(Button, "x1", Button.left),
-            "forward": getattr(Button, "x2", Button.left),
+            "back": getattr(Button, "x1", None) or getattr(Button, "button8", None),
+            "forward": getattr(Button, "x2", None) or getattr(Button, "button9", None),
         }
+        self._keys = {
+            "ctrl": Key.ctrl, "alt": Key.alt, "shift": Key.shift, "win": Key.cmd,
+            "tab": Key.tab, "esc": Key.esc, "enter": Key.enter, "space": Key.space,
+            "left": Key.left, "right": Key.right, "up": Key.up, "down": Key.down,
+            "page_up": Key.page_up, "page_down": Key.page_down, "home": Key.home, "end": Key.end,
+        }
+        for i in range(1, 13):
+            self._keys[f"f{i}"] = getattr(Key, f"f{i}")
         self.screen = _screen_size()
 
     def move(self, dx: int, dy: int) -> None:
@@ -81,6 +121,13 @@ class PynputDriver:
 
     def scroll(self, h: int, v: int) -> None:
         self._mouse.scroll(_clamp(h), _clamp(v))
+
+    def key(self, keys: list[str]) -> None:
+        objs = [self._keys.get(k, k) for k in keys]  # letras/digitos se pasan como caracter
+        for o in objs:
+            self._kb.press(o)
+        for o in reversed(objs):
+            self._kb.release(o)
 
     def recenter(self) -> None:
         w, h = self.screen
@@ -116,6 +163,9 @@ class DryRunDriver:
 
     def scroll(self, h: int, v: int) -> None:
         self._emit(ev="scroll", h=h, v=v)
+
+    def key(self, keys: list[str]) -> None:
+        self._emit(ev="key", k=keys)
 
     def recenter(self) -> None:
         self._emit(ev="recenter")

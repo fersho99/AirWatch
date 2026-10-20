@@ -75,6 +75,9 @@ class WifiLink(
     val latencyMs = MutableStateFlow<Int?>(null)
     val pairingSas = MutableStateFlow<String?>(null)
 
+    /** Mensajes de control del PC (perfil, diapositiva, avisos). Se llama desde un hilo de fondo. */
+    @Volatile var onServerMessage: ((JSONObject) -> Unit)? = null
+
     private val cm = app.getSystemService(ConnectivityManager::class.java)
     private val wm = app.applicationContext.getSystemService(WifiManager::class.java)
 
@@ -369,7 +372,12 @@ class WifiLink(
 
     private suspend fun rxLoop(ls: LiveSession) {
         for (frame in ls.conn.bins) {
-            openServer(ls, frame) ?: continue   // por ahora solo "pong"/"info"; Etapa 3 agrega estado de diapositivas
+            val plain = openServer(ls, frame) ?: continue
+            try {
+                onServerMessage?.invoke(JSONObject(String(plain)))
+            } catch (_: Exception) {
+                // un mensaje mal formado del PC no debe tumbar la sesion
+            }
         }
     }
 

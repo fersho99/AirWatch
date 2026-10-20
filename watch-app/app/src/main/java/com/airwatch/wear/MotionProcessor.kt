@@ -2,19 +2,17 @@ package com.airwatch.wear
 
 import kotlin.math.abs
 import kotlin.math.hypot
+import kotlin.math.max
 import kotlin.math.min
 
 /**
  * Convierte velocidad angular del giroscopio (rad/s) en desplazamiento de cursor (px).
  *
- * Marco del reloj (cara hacia arriba, muneca izquierda, corona a las 3):
- *   +x hacia la corona, +y hacia los dedos, +z saliendo de la pantalla.
- *   - flexion/extension de la muneca  -> giro alrededor de x  -> movimiento vertical
- *   - desviacion radial/cubital       -> giro alrededor de z  -> movimiento horizontal
- *   - pronacion/supinacion (roll)     -> giro alrededor de y  -> reservado para gestos (Etapa 2)
- * Si en tu muneca el cursor va al reves, usa "Invertir X/Y" en Ajustes.
+ * Los ejes NO estan fijos: el asistente de configuracion mide en que direccion del marco del reloj
+ * giran "mano a la derecha" ([Settings.axisRight]) y "mano hacia abajo" ([Settings.axisDown]) y
+ * aqui se proyecta la velocidad angular sobre ellos. Asi funciona con cualquier muneca y postura.
  *
- * Pipeline: sesgo del giroscopio -> zona muerta suave -> low-pass exponencial ->
+ * Pipeline: sesgo del giroscopio -> proyeccion a ejes -> zona muerta suave -> low-pass exponencial ->
  *           aceleracion -> acumulador de pixeles fraccionarios.
  */
 class MotionProcessor(private val settings: () -> Settings) {
@@ -27,12 +25,20 @@ class MotionProcessor(private val settings: () -> Settings) {
 
     @Volatile var tracking = true
 
+    /** true mientras el scroll por inclinacion esta activo: el cursor no se mueve. */
+    @Volatile var cursorSuspended = false
+
+    /** Velocidad angular con el sesgo ya restado (rad/s); la usan los demas detectores. */
+    @Volatile var omega = Vec3.ZERO
+        private set
+
     private val lock = Any()
     private var lastTs = 0L
     private var bx = 0f; private var by = 0f; private var bz = 0f
     private var stillSince = 0L
     private var fx = 0f; private var fy = 0f
     private var accX = 0f; private var accY = 0f
+    private var freezeUntil = 0L
 
     /** Ultimo timestamp de sensor con movimiento intencional (0 = aun sin datos); sirve para bajar la frecuencia. */
     @Volatile var lastActiveNs = 0L
@@ -41,6 +47,18 @@ class MotionProcessor(private val settings: () -> Settings) {
     fun reset() {
         synchronized(lock) {
             lastTs = 0L; fx = 0f; fy = 0f; accX = 0f; accY = 0f; stillSince = 0L; lastActiveNs = 0L
+            freezeUntil = 0L
+        }
+    }
+
+    /**
+     * Congela el cursor hasta `untilTs` (nanosegundos en el dominio de los eventos de sensor) y descarta
+     * lo acumulado: asi el sacudon de un gesto de clic no se convierte en movimiento del cursor.
+     */
+    fun freeze(untilTs: Long) {
+        synchronized(lock) {
+            freezeUntil = max(freezeUntil, untilTs)
+            accX = 0f; accY = 0f; fx = 0f; fy = 0f
         }
     }
 
@@ -65,12 +83,17 @@ class MotionProcessor(private val settings: () -> Settings) {
         } else {
             stillSince = 0L
         }
+        val w = Vec3(gx - bx, gy - by, gz - bz)
+        omega = w
 
-        if (!tracking) { fx = 0f; fy = 0f; return }
+        if (!tracking || cursorSuspended || ts < freezeUntil) {
+            fx = 0f; fy = 0f; accX = 0f; accY = 0f
+            return
+        }
 
-        // 2) Ejes -> pantalla (ver doc de la clase)
-        var rx = -(gz - bz)
-        var ry = -(gx - bx)
+        // 2) Ejes calibrados -> pantalla
+        var rx = w dot s.axisRight
+        var ry = w dot s.axisDown
         if (s.invertX) rx = -rx
         if (s.invertY) ry = -ry
 
@@ -100,8 +123,8 @@ class MotionProcessor(private val settings: () -> Settings) {
         synchronized(lock) {
             val ix = accX.toInt(); val iy = accY.toInt()
             accX -= ix; accY -= iy
-            out[0] = if (tracking) ix else 0
-            out[1] = if (tracking) iy else 0
+            out[0] = if (tracking && !cursorSuspended) ix else 0
+            out[1] = if (tracking && !cursorSuspended) iy else 0
         }
     }
 

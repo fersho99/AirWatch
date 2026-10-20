@@ -4,12 +4,39 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import signal
 import socket
 import sys
 
 from .input_driver import DryRunDriver
 from .server import PAIR_WINDOW_S, AirWatchServer
 from .store import DeviceStore, config_dir
+
+
+def build_presenter(driver, use_overlay: bool, dry_run: bool):
+    """Overlay de laser/marcador, lector de PowerPoint y deteccion de la app en primer plano (cada parte es opcional)."""
+    from .presenter import Presenter
+    from .slides import PowerPointSource, SlideTracker
+
+    overlay = None
+    if dry_run and hasattr(driver, "_emit"):
+        from .overlay import LogOverlay
+
+        overlay = LogOverlay(driver._emit)
+    elif use_overlay:
+        try:
+            from .overlay_tk import TkOverlay
+
+            overlay = TkOverlay()
+        except Exception as exc:
+            logging.warning("Laser/marcador desactivados (%s). Usa --no-overlay para ocultar este aviso.", exc)
+    ppt = PowerPointSource() if sys.platform == "win32" and not dry_run else None
+    foreground = None
+    if not dry_run:
+        from .fgapp import foreground as fg
+
+        foreground = fg
+    return Presenter(driver, overlay, SlideTracker(ppt), foreground)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--forget", metavar="ID", help="olvidar un reloj emparejado")
     p.add_argument("--dry-run", action="store_true", help="no mover el mouse real (pruebas)")
     p.add_argument("--dry-run-log", metavar="ARCHIVO", help="registrar eventos en JSONL (con --dry-run)")
+    p.add_argument("--no-overlay", action="store_true", help="sin superposicion de laser/marcador")
     p.add_argument("--unsafe-auto-confirm", action="store_true",
                    help="SOLO PRUEBAS: omite la confirmacion manual del codigo en la PC")
     p.add_argument("-v", "--verbose", action="store_true")
@@ -49,11 +77,14 @@ def main(argv: list[str] | None = None) -> int:
 
         driver = PynputDriver()
 
+    presenter = build_presenter(driver, use_overlay=not (args.no_overlay or args.dry_run), dry_run=args.dry_run)
     server = AirWatchServer(driver, store, args.host, args.port, args.udp_port, args.name,
-                            mdns=not args.no_mdns, auto_confirm=args.unsafe_auto_confirm)
+                            mdns=not args.no_mdns, auto_confirm=args.unsafe_auto_confirm, presenter=presenter)
     if args.pair:
         server.open_pairing_window()
         logging.info("Ventana de emparejamiento abierta %d s. En el reloj: Emparejar.", PAIR_WINDOW_S)
+    if hasattr(signal, "SIGBREAK"):  # Windows: Ctrl+Break / CTRL_BREAK_EVENT cierra limpio, como Ctrl+C
+        signal.signal(signal.SIGBREAK, signal.default_int_handler)
     try:
         asyncio.run(server.run())
     except KeyboardInterrupt:

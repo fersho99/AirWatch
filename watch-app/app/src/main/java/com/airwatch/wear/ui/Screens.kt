@@ -46,28 +46,70 @@ import androidx.wear.compose.material.PositionIndicator
 import androidx.wear.compose.material.Scaffold
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
+import com.airwatch.wear.Action
 import com.airwatch.wear.Engine
+import com.airwatch.wear.Gesture
 import com.airwatch.wear.LinkState
 import com.airwatch.wear.Phase
+import com.airwatch.wear.Step
+import com.airwatch.wear.Wrist
 import kotlin.math.roundToInt
 
-private enum class Screen { HOME, MOUSE, SETTINGS }
+private enum class Screen { HOME, MOUSE, SETTINGS, WIZARD, PRES, PRES_MORE, PRES_GOTO, PRES_NOTES, PRES_TIMER }
+
+private fun backTarget(s: Screen): Screen = when (s) {
+    Screen.PRES_GOTO, Screen.PRES_NOTES, Screen.PRES_TIMER -> Screen.PRES_MORE
+    Screen.PRES_MORE -> Screen.PRES
+    else -> Screen.HOME
+}
 
 @Composable
 fun AirWatchApp() {
     MaterialTheme {
-        var screen by remember { mutableStateOf(Screen.HOME) }
+        var screen by remember { mutableStateOf(if (Engine.settings.value.setupDone) Screen.HOME else Screen.WIZARD) }
         val sas by Engine.link.pairingSas.collectAsState()
 
-        BackHandler(enabled = screen != Screen.HOME && sas == null) { screen = Screen.HOME }
+        BackHandler(enabled = screen != Screen.HOME && sas == null) { screen = backTarget(screen) }
+
+        // Todas las pantallas de presentacion comparten el modo: el movimiento ya no mueve el mouse real
+        // y la pantalla se queda encendida (los gestos solo funcionan con la pantalla encendida).
+        val view = LocalView.current
+        val inPresentation = screen.name.startsWith("PRES")
+        DisposableEffect(inPresentation) {
+            if (inPresentation) {
+                Engine.setPresenting(true)
+                view.keepScreenOn = true
+            }
+            onDispose {
+                if (inPresentation) {
+                    Engine.setPresenting(false)
+                    view.keepScreenOn = false
+                }
+            }
+        }
 
         val code = sas
         if (code != null) {
             PairingScreen(code)
         } else when (screen) {
-            Screen.HOME -> HomeScreen(onMouse = { screen = Screen.MOUSE }, onSettings = { screen = Screen.SETTINGS })
+            Screen.HOME -> HomeScreen(
+                onMouse = { screen = Screen.MOUSE },
+                onSettings = { screen = Screen.SETTINGS },
+                onWizard = { screen = Screen.WIZARD },
+                onPresent = { screen = Screen.PRES },
+            )
             Screen.MOUSE -> MouseScreen()
-            Screen.SETTINGS -> SettingsScreen()
+            Screen.SETTINGS -> SettingsScreen(onWizard = { screen = Screen.WIZARD })
+            Screen.WIZARD -> WizardScreen(onDone = { screen = Screen.HOME })
+            Screen.PRES -> PresentScreen(onMore = { screen = Screen.PRES_MORE })
+            Screen.PRES_MORE -> PresentMoreScreen(
+                onGoto = { screen = Screen.PRES_GOTO },
+                onNotes = { screen = Screen.PRES_NOTES },
+                onTimer = { screen = Screen.PRES_TIMER },
+            )
+            Screen.PRES_GOTO -> PresentGotoScreen(onDone = { screen = Screen.PRES })
+            Screen.PRES_NOTES -> PresentNotesScreen()
+            Screen.PRES_TIMER -> PresentTimerScreen()
         }
     }
 }
@@ -84,7 +126,7 @@ private fun phaseLabel(p: Phase) = when (p) {
 
 // ====================================================================== Conexión
 @Composable
-private fun HomeScreen(onMouse: () -> Unit, onSettings: () -> Unit) {
+private fun HomeScreen(onMouse: () -> Unit, onSettings: () -> Unit, onWizard: () -> Unit, onPresent: () -> Unit) {
     val ctx = LocalContext.current
     val link by Engine.link.state.collectAsState()
     val latency by Engine.link.latencyMs.collectAsState()
@@ -135,6 +177,25 @@ private fun HomeScreen(onMouse: () -> Unit, onSettings: () -> Unit) {
                     onClick = onMouse,
                     enabled = link.phase == Phase.CONNECTED,
                     label = { Text("Modo mouse") },
+                    colors = ChipDefaults.secondaryChipColors(),
+                )
+            }
+            item {
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onPresent,
+                    enabled = link.phase == Phase.CONNECTED,
+                    label = { Text("Modo presentación") },
+                    secondaryLabel = { Text("Diapositivas, láser, temporizador") },
+                    colors = ChipDefaults.secondaryChipColors(),
+                )
+            }
+            item {
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onWizard,
+                    label = { Text("Calibrar muñeca") },
+                    secondaryLabel = { Text("Ejes y gestos") },
                     colors = ChipDefaults.secondaryChipColors(),
                 )
             }
@@ -194,6 +255,9 @@ private fun MouseScreen() {
     val tracking by Engine.tracking.collectAsState()
     val latency by Engine.link.latencyMs.collectAsState()
     val link by Engine.link.state.collectAsState()
+    val scrolling by Engine.scrollActive.collectAsState()
+    val dragging by Engine.dragging.collectAsState()
+    val gesture by Engine.lastGesture.collectAsState()
     val focus = remember { FocusRequester() }
     val view = LocalView.current
 
@@ -214,6 +278,8 @@ private fun MouseScreen() {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             val status = when {
                 link.phase != Phase.CONNECTED -> "Sin conexión"
+                scrolling -> "↕ Modo scroll"
+                dragging -> "✥ Arrastrando"
                 tracking -> "● Activo" + (latency?.let { " · $it ms" } ?: "")
                 else -> "❚❚ En pausa"
             }
@@ -222,6 +288,7 @@ private fun MouseScreen() {
                 fontSize = 12.sp,
                 color = if (tracking && link.phase == Phase.CONNECTED) Color(0xFF66BB6A) else Color(0xFFFFA726),
             )
+            gesture?.let { Text("${it.gesture.label}: ${it.action.label}", fontSize = 10.sp) }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MouseButton("Izq", "left")
                 MouseButton("Der", "right")
@@ -262,7 +329,7 @@ private fun MouseButton(label: String, name: String) {
 
 // ====================================================================== Ajustes
 @Composable
-private fun SettingsScreen() {
+private fun SettingsScreen(onWizard: () -> Unit) {
     val ctx = LocalContext.current
     val s by Engine.settings.collectAsState()
     val listState = rememberScalingLazyListState()
@@ -316,6 +383,96 @@ private fun SettingsScreen() {
                     colors = ChipDefaults.secondaryChipColors(),
                 )
             }
+            item { Text("Gestos", fontSize = 14.sp) }
+            item {
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { Engine.update { it.copy(gesturesEnabled = !it.gesturesEnabled) } },
+                    label = { Text("Gestos de muñeca") },
+                    secondaryLabel = { Text(if (s.gesturesEnabled) "Activados" else "Desactivados") },
+                    colors = ChipDefaults.secondaryChipColors(),
+                )
+            }
+            item {
+                SettingSlider("Deslizar tras el toque", s.presSwipeDeg, 8f..40f, 15, { "%.0f°".format(it) }) { v ->
+                    Engine.update { it.copy(presSwipeDeg = v) }
+                }
+            }
+            for (g in listOf(Gesture.ROLL_IN, Gesture.ROLL_OUT)) {
+                item {
+                    Chip(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            Engine.update {
+                                val all = Action.entries
+                                it.withAction(g, all[(all.indexOf(it.actionFor(g)) + 1) % all.size])
+                            }
+                        },
+                        label = { Text(g.label) },
+                        secondaryLabel = { Text(s.actionFor(g).label) },
+                        colors = ChipDefaults.secondaryChipColors(),
+                    )
+                }
+            }
+            item {
+                SettingSlider("Umbral de toque", s.tapThreshold, 0.8f..5f, 14, { "%.1f m/s²".format(it) }) { v ->
+                    Engine.update { it.copy(tapThreshold = v) }
+                }
+            }
+            item {
+                SettingSlider("Umbral de giro", s.rollThreshold, 3f..10f, 14, { "%.1f rad/s".format(it) }) { v ->
+                    Engine.update { it.copy(rollThreshold = v) }
+                }
+            }
+            item {
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { Engine.update { it.copy(scrollPose = !it.scrollPose) } },
+                    label = { Text("Scroll inclinando") },
+                    secondaryLabel = { Text(if (s.scrollPose) "Activado" else "Desactivado") },
+                    colors = ChipDefaults.secondaryChipColors(),
+                )
+            }
+            item { Text("Presentación", fontSize = 14.sp) }
+            for (g in Gesture.entries) {
+                item {
+                    Chip(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            Engine.update {
+                                val all = Action.entries
+                                it.withPresAction(g, all[(all.indexOf(it.presActionFor(g)) + 1) % all.size])
+                            }
+                        },
+                        label = { Text(g.label) },
+                        secondaryLabel = { Text(s.presActionFor(g).label) },
+                        colors = ChipDefaults.secondaryChipColors(),
+                    )
+                }
+            }
+            item {
+                SettingSlider("Apagar láser tras", s.presLaserIdleS.toFloat(), 3f..30f, 26, { "%.0f s".format(it) }) { v ->
+                    Engine.update { it.copy(presLaserIdleS = v.toInt()) }
+                }
+            }
+            item {
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { Engine.update { it.copy(presHaptics = !it.presHaptics) } },
+                    label = { Text("Vibrar al hacer gestos") },
+                    secondaryLabel = { Text(if (s.presHaptics) "Sí" else "No (solo el temporizador)") },
+                    colors = ChipDefaults.secondaryChipColors(),
+                )
+            }
+            item {
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onWizard,
+                    label = { Text("Reconfigurar") },
+                    secondaryLabel = { Text("Muñeca: ${s.wrist.label}") },
+                    colors = ChipDefaults.secondaryChipColors(),
+                )
+            }
             item {
                 Chip(
                     modifier = Modifier.fillMaxWidth(),
@@ -329,7 +486,7 @@ private fun SettingsScreen() {
 }
 
 @Composable
-private fun SettingSlider(
+internal fun SettingSlider(
     label: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
@@ -347,5 +504,105 @@ private fun SettingSlider(
             valueRange = range,
             steps = steps,
         )
+    }
+}
+
+// ====================================================================== Asistente de configuración
+@Composable
+private fun WizardScreen(onDone: () -> Unit) {
+    val st by Engine.wizardState.collectAsState()
+    val view = LocalView.current
+    val listState = rememberScalingLazyListState()
+
+    DisposableEffect(Unit) {
+        Engine.startWizard()
+        view.keepScreenOn = true
+        onDispose {
+            view.keepScreenOn = false
+            Engine.stopWizard()
+        }
+    }
+
+    val w = st
+    Scaffold(
+        timeText = { TimeText() },
+        positionIndicator = { PositionIndicator(scalingLazyListState = listState) },
+    ) {
+        ScalingLazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            state = listState,
+            verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+        ) {
+            if (w == null) {
+                item { Text("Preparando…", fontSize = 13.sp) }
+                return@ScalingLazyColumn
+            }
+            item { Text("Paso ${w.stepIndex}/${w.stepCount}", fontSize = 11.sp, color = MaterialTheme.colors.primary) }
+            item { Text(w.message, fontSize = 13.sp, textAlign = TextAlign.Center) }
+            if (w.progress.isNotBlank()) {
+                item { Text(w.progress, fontSize = 16.sp, color = Color(0xFF66BB6A), textAlign = TextAlign.Center) }
+            }
+            w.warning?.let { item { Text(it, fontSize = 11.sp, color = Color(0xFFFFA726), textAlign = TextAlign.Center) } }
+            w.summary?.let { lines -> items(lines.size) { Text(lines[it], fontSize = 11.sp, textAlign = TextAlign.Center) } }
+
+            when (w.step) {
+                Step.WRIST -> {
+                    item {
+                        Chip(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { Engine.wizardSetWrist(Wrist.LEFT) },
+                            label = { Text("Izquierda") },
+                            colors = ChipDefaults.primaryChipColors(),
+                        )
+                    }
+                    item {
+                        Chip(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { Engine.wizardSetWrist(Wrist.RIGHT) },
+                            label = { Text("Derecha") },
+                            colors = ChipDefaults.primaryChipColors(),
+                        )
+                    }
+                }
+                Step.SUMMARY -> {
+                    item {
+                        Chip(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { Engine.wizardSave(); onDone() },
+                            label = { Text("Guardar") },
+                            colors = ChipDefaults.primaryChipColors(),
+                        )
+                    }
+                    item {
+                        Chip(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { Engine.wizardRestart() },
+                            label = { Text("Repetir todo") },
+                            colors = ChipDefaults.secondaryChipColors(),
+                        )
+                    }
+                }
+                else -> {
+                    item {
+                        Chip(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { Engine.wizardRetry() },
+                            label = { Text("Reintentar") },
+                            colors = ChipDefaults.secondaryChipColors(),
+                        )
+                    }
+                    if (w.canSkip) {
+                        item {
+                            Chip(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { Engine.wizardSkip() },
+                                label = { Text("Saltar") },
+                                colors = ChipDefaults.secondaryChipColors(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }

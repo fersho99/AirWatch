@@ -104,6 +104,10 @@ class FakeWatch:
     async def send_ctrl(self, obj: dict) -> None:
         await self.ws.send(self._seal(json.dumps(obj).encode()))
 
+    async def recv_ctrl(self, timeout: float = 2.0) -> dict:
+        """Siguiente mensaje de control del servidor (ya descifrado)."""
+        return json.loads(self._open_server(await asyncio.wait_for(self.ws.recv(), timeout)))
+
     def send_move(self, dx: int, dy: int) -> bytes:
         frame = self._seal(bytes([UDP_MOVE]) + struct.pack(">hh", dx, dy))
         self.last_frame = frame

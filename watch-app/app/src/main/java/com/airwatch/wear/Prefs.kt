@@ -1,6 +1,7 @@
 package com.airwatch.wear
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.security.KeyStore
@@ -9,35 +10,87 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** Ajustes del air mouse (se persisten en SharedPreferences). */
-data class Settings(
-    val sensitivity: Float = 1.0f,  // multiplicador 0.2..3.0 sobre ~1200 px/rad
-    val smoothing: Float = 0.35f,   // 0 = sin filtro .. 0.9 = muy suave (low-pass exponencial)
-    val deadzone: Float = 0.06f,    // rad/s ignorados (anti-temblor)
-    val accel: Float = 0.4f,        // 0 = lineal .. 2 = mucha aceleracion
-    val sendHz: Int = 80,           // 60..100 Hz de envio
-    val invertX: Boolean = false,
-    val invertY: Boolean = false,
-)
-
+/** Persistencia de [Settings] (la clase de datos vive en Settings.kt, sin dependencias de Android). */
 class Prefs(ctx: Context) {
     private val sp = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    fun load() = Settings(
-        sensitivity = sp.getFloat("sensitivity", 1.0f),
-        smoothing = sp.getFloat("smoothing", 0.35f),
-        deadzone = sp.getFloat("deadzone", 0.06f),
-        accel = sp.getFloat("accel", 0.4f),
-        sendHz = sp.getInt("sendHz", 80),
-        invertX = sp.getBoolean("invertX", false),
-        invertY = sp.getBoolean("invertY", false),
-    )
+    private fun vec(key: String, def: Vec3) =
+        Vec3(sp.getFloat("${key}X", def.x), sp.getFloat("${key}Y", def.y), sp.getFloat("${key}Z", def.z))
 
-    fun save(s: Settings) = sp.edit()
-        .putFloat("sensitivity", s.sensitivity).putFloat("smoothing", s.smoothing)
-        .putFloat("deadzone", s.deadzone).putFloat("accel", s.accel)
-        .putInt("sendHz", s.sendHz).putBoolean("invertX", s.invertX).putBoolean("invertY", s.invertY)
-        .apply()
+    private fun SharedPreferences.Editor.putVec(key: String, v: Vec3): SharedPreferences.Editor =
+        putFloat("${key}X", v.x).putFloat("${key}Y", v.y).putFloat("${key}Z", v.z)
+
+    private inline fun <reified E : Enum<E>> enumOf(key: String, def: E): E =
+        try {
+            enumValueOf<E>(sp.getString(key, def.name) ?: def.name)
+        } catch (_: IllegalArgumentException) {
+            def
+        }
+
+    fun load(): Settings {
+        val d = Settings()
+        // v2: nuevo mapa de gestos (toque / doble toque / giro palma abajo). Se reinician las asignaciones guardadas.
+        if (sp.getInt("mapVer", 1) < 2) {
+            sp.edit().remove("tapAction").remove("doubleTapAction").remove("rollOutAction").remove("rollInAction")
+                .putInt("mapVer", 2).apply()
+        }
+        // v3: presentacion = toque + deslizar; los giros quedan sin asignar (se descartan las asignaciones viejas).
+        if (sp.getInt("mapVer", 1) < 3) {
+            sp.edit().remove("presTap").remove("presDoubleTap").remove("presRollIn").remove("presRollOut")
+                .remove("presPoseLaser").putInt("mapVer", 3).apply()
+        }
+        return Settings(
+            sensitivity = sp.getFloat("sensitivity", d.sensitivity),
+            smoothing = sp.getFloat("smoothing", d.smoothing),
+            deadzone = sp.getFloat("deadzone", d.deadzone),
+            accel = sp.getFloat("accel", d.accel),
+            sendHz = sp.getInt("sendHz", d.sendHz),
+            invertX = sp.getBoolean("invertX", d.invertX),
+            invertY = sp.getBoolean("invertY", d.invertY),
+            wrist = enumOf("wrist", d.wrist),
+            setupDone = sp.getBoolean("setupDone", d.setupDone),
+            axisRight = vec("axisRight", d.axisRight),
+            axisDown = vec("axisDown", d.axisDown),
+            axisRoll = vec("axisRoll", d.axisRoll),
+            gesturesEnabled = sp.getBoolean("gesturesEnabled", d.gesturesEnabled),
+            tapThreshold = sp.getFloat("tapThreshold", d.tapThreshold),
+            rollThreshold = sp.getFloat("rollThreshold", d.rollThreshold),
+            tapAction = enumOf("tapAction", d.tapAction),
+            doubleTapAction = enumOf("doubleTapAction", d.doubleTapAction),
+            rollOutAction = enumOf("rollOutAction", d.rollOutAction),
+            rollInAction = enumOf("rollInAction", d.rollInAction),
+            compMs = sp.getInt("compMs", d.compMs),
+            scrollPose = sp.getBoolean("scrollPose", d.scrollPose),
+            scrollEnterDeg = sp.getFloat("scrollEnterDeg", d.scrollEnterDeg),
+            presRollIn = enumOf("presRollIn", d.presRollIn),
+            presRollOut = enumOf("presRollOut", d.presRollOut),
+            presSwipeDeg = sp.getFloat("presSwipeDeg", d.presSwipeDeg),
+            presLaserIdleS = sp.getInt("presLaserIdleS", d.presLaserIdleS),
+            presMinutes = sp.getInt("presMinutes", d.presMinutes),
+            presProfile = sp.getString("presProfile", d.presProfile) ?: d.presProfile,
+            presHaptics = sp.getBoolean("presHaptics", d.presHaptics),
+        )
+    }
+
+    fun save(s: Settings) {
+        sp.edit()
+            .putFloat("sensitivity", s.sensitivity).putFloat("smoothing", s.smoothing)
+            .putFloat("deadzone", s.deadzone).putFloat("accel", s.accel)
+            .putInt("sendHz", s.sendHz).putBoolean("invertX", s.invertX).putBoolean("invertY", s.invertY)
+            .putString("wrist", s.wrist.name).putBoolean("setupDone", s.setupDone)
+            .putVec("axisRight", s.axisRight).putVec("axisDown", s.axisDown).putVec("axisRoll", s.axisRoll)
+            .putBoolean("gesturesEnabled", s.gesturesEnabled)
+            .putFloat("tapThreshold", s.tapThreshold).putFloat("rollThreshold", s.rollThreshold)
+            .putString("tapAction", s.tapAction.name).putString("doubleTapAction", s.doubleTapAction.name)
+            .putString("rollOutAction", s.rollOutAction.name)
+            .putString("rollInAction", s.rollInAction.name)
+            .putInt("compMs", s.compMs).putBoolean("scrollPose", s.scrollPose)
+            .putFloat("scrollEnterDeg", s.scrollEnterDeg)
+            .putString("presRollIn", s.presRollIn.name).putString("presRollOut", s.presRollOut.name)
+            .putFloat("presSwipeDeg", s.presSwipeDeg).putInt("presLaserIdleS", s.presLaserIdleS).putInt("presMinutes", s.presMinutes)
+            .putString("presProfile", s.presProfile).putBoolean("presHaptics", s.presHaptics)
+            .apply()
+    }
 
     var lastHost: String?
         get() = sp.getString("lastHost", null)
