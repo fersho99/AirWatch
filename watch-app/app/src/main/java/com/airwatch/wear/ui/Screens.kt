@@ -47,11 +47,13 @@ import androidx.wear.compose.material.Scaffold
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import com.airwatch.wear.Action
+import com.airwatch.wear.BtHidLink
 import com.airwatch.wear.Engine
 import com.airwatch.wear.Gesture
 import com.airwatch.wear.LinkState
 import com.airwatch.wear.Phase
 import com.airwatch.wear.Step
+import com.airwatch.wear.Transport
 import com.airwatch.wear.Wrist
 import kotlin.math.roundToInt
 
@@ -128,7 +130,7 @@ private fun phaseLabel(p: Phase) = when (p) {
 @Composable
 private fun HomeScreen(onMouse: () -> Unit, onSettings: () -> Unit, onWizard: () -> Unit, onPresent: () -> Unit) {
     val ctx = LocalContext.current
-    val link by Engine.link.state.collectAsState()
+    val link by Engine.linkState.collectAsState()
     val latency by Engine.link.latencyMs.collectAsState()
     val running by Engine.running.collectAsState()
     val listState = rememberScalingLazyListState()
@@ -254,7 +256,7 @@ private fun PairingScreen(sas: String) {
 private fun MouseScreen() {
     val tracking by Engine.tracking.collectAsState()
     val latency by Engine.link.latencyMs.collectAsState()
-    val link by Engine.link.state.collectAsState()
+    val link by Engine.linkState.collectAsState()
     val scrolling by Engine.scrollActive.collectAsState()
     val dragging by Engine.dragging.collectAsState()
     val gesture by Engine.lastGesture.collectAsState()
@@ -433,6 +435,15 @@ private fun SettingsScreen(onWizard: () -> Unit) {
                     colors = ChipDefaults.secondaryChipColors(),
                 )
             }
+            item {
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { Engine.fixNeutral() },
+                    label = { Text("Fijar posición normal") },
+                    secondaryLabel = { Text("Mano en reposo, palma hacia adentro") },
+                    colors = ChipDefaults.secondaryChipColors(),
+                )
+            }
             item { Text("Presentación", fontSize = 14.sp) }
             for (g in Gesture.entries) {
                 item {
@@ -461,6 +472,28 @@ private fun SettingsScreen(onWizard: () -> Unit) {
                     onClick = { Engine.update { it.copy(presHaptics = !it.presHaptics) } },
                     label = { Text("Vibrar al hacer gestos") },
                     secondaryLabel = { Text(if (s.presHaptics) "Sí" else "No (solo el temporizador)") },
+                    colors = ChipDefaults.secondaryChipColors(),
+                )
+            }
+            item {
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        val all = Transport.entries
+                        Engine.setTransport(all[(all.indexOf(s.transport) + 1) % all.size])
+                    },
+                    label = { Text("Conexión") },
+                    secondaryLabel = { Text(s.transport.label) },
+                    colors = ChipDefaults.secondaryChipColors(),
+                )
+            }
+            item {
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                Chip(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { BtHidLink.requestDiscoverable(ctx) },
+                    label = { Text("Emparejar Bluetooth") },
+                    secondaryLabel = { Text("Hace visible el reloj 2 min") },
                     colors = ChipDefaults.secondaryChipColors(),
                 )
             }

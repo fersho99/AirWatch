@@ -399,6 +399,30 @@ fun testPresentation() {
     check(fired == 1 && !sw2.armed, "un toque produce como maximo un cambio de diapositiva")
 }
 
+fun testHid() {
+    println("[8] Bluetooth HID")
+    val kb = { k: List<String> -> HidKeys.keyboardReport(k)!!.map { it.toInt() and 0xFF } }
+    check(kb(listOf("right")) == listOf(0, 0, 0x4F, 0, 0, 0, 0, 0), "flecha derecha = uso 0x4F")
+    check(kb(listOf("shift", "f5")) == listOf(2, 0, 0x3E, 0, 0, 0, 0, 0), "Shift+F5: modificador + F5")
+    check(kb(listOf("ctrl", "alt", "a"))[0] == 5 && kb(listOf("ctrl", "alt", "a"))[2] == 0x04, "Ctrl+Alt+A")
+    check(kb(listOf("0"))[2] == 0x27 && kb(listOf("1"))[2] == 0x1E && kb(listOf("z"))[2] == 0x1D && kb(listOf("."))[2] == 0x37, "digitos, letras y punto")
+    check(HidKeys.keyboardReport(listOf("rm")) == null, "tecla desconocida -> sin informe")
+    check(HidKeys.presSequence("goto", 12) == listOf(listOf("1"), listOf("2"), listOf("enter")) &&
+        HidKeys.presSequence("goto", 0) == null && HidKeys.presSequence("goto", 10000) == null &&
+        HidKeys.presSequence("rm") == null && HidKeys.presSequence("next") == listOf(listOf("right")),
+        "atajos de presentacion (ir a 12 = 1,2,Enter; rango; accion inventada)")
+    check(HidKeys.mouseReport(3, 300, -300, 5).map { it.toInt() } == listOf(3, 127, -127, 5), "informe de mouse acotado a -127..127")
+    check(HidKeys.splitMove(300, -10).let { p -> p.size == 3 && p.sumOf { it[0] } == 300 && p.sumOf { it[1] } == -10 && p.all { Math.abs(it[0]) <= 127 } },
+        "un movimiento grande se divide sin perder pixeles")
+    check(HidKeys.splitMove(0, 0).isEmpty(), "movimiento nulo = ningun informe")
+    check(HidKeys.buttonMask("left") == 1 && HidKeys.buttonMask("right") == 2 && HidKeys.buttonMask("middle") == 4 &&
+        HidKeys.buttonMask("back") == 8 && HidKeys.buttonMask("x") == 0, "mascara de botones")
+    val d = HidKeys.DESCRIPTOR.map { it.toInt() and 0xFF }
+    check(d.size == 107 || d.size > 90, "descriptor HID presente (${d.size} bytes)")
+    check(d.take(8) == listOf(0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x85, 0x01) && d.count { it == 0xC0 } >= 3,
+        "descriptor: empieza como mouse (id 1) y cierra las colecciones")
+}
+
 fun testThresholdFit() {
     println("[6] Ajuste de umbrales")
     val good = ThresholdFit.fit(listOf(2.2f, 2.6f, 2.4f, 2.9f, 2.5f), 0.4f, 0.8f, 6f)
@@ -416,6 +440,7 @@ fun main() {
     testPalmSideAndTaps()
     testPresentation()
     testThresholdFit()
+    testHid()
     println(if (failures == 0) "\nTODO OK" else "\n$failures FALLOS")
     exitProcess(if (failures == 0) 0 else 1)
 }

@@ -1,6 +1,7 @@
 # AirWatch — Galaxy Watch 8 como air mouse y control de presentaciones (Etapas 1–3)
 
 Etapa 1 = conexión Wi-Fi cifrada + movimiento del cursor + clics básicos y scroll.
+Etapa 4 = conexión por Bluetooth (el reloj como ratón/teclado, sin software en la PC) con Wi-Fi de respaldo.
 Etapa 3 = modo presentación (diapositivas con «toque + deslizar», láser en pantalla, temporizador con vibración, notas, perfiles por aplicación).
 Etapa 2 = asistente de configuración (muñeca y ejes medidos), gestos de muñeca (clic, clic derecho, arrastrar), scroll inclinando la mano y compensación del sacudón.
 Gestos de muñeca (Etapa 2), modo presentación (3) y puente móvil / Bluetooth HID (4) vienen después.
@@ -10,11 +11,11 @@ airwatch/
 ├─ pc-server/                 Servidor Windows/Linux/macOS (Python)
 │  ├─ airwatch_server/        crypto.py · server.py · input_driver.py · netutil.py · store.py
 │  ├─ tools/                  fake_watch.py (reloj simulado) · e2e_test.py · interop/ (Java↔Python)
-│  ├─ windows/allow_firewall.ps1
+│  ├─ windows/allow_firewall.ps1 · autostart.ps1
 │  └─ run_server.bat
 └─ watch-app/                 App Wear OS (Kotlin + Compose) — abrir esta carpeta en Android Studio
    └─ app/src/main/java/com/airwatch/wear/
-      Crypto · Prefs · MotionProcessor · WifiLink · Engine · AirMouseService · MainActivity · ui/Screens
+      Crypto · Prefs · MotionProcessor · WifiLink · BtHidLink · HidKeys · Gestures · Calibrator · Presentation · Engine · AirMouseService · MainActivity · ui/
 ```
 
 ## 1. Servidor en la PC
@@ -51,6 +52,19 @@ Para quitar las reglas: `Get-NetFirewallRule -DisplayName 'AirWatch*' | Remove-N
 
 Opciones útiles: `--list-devices`, `--forget <ID>`, `--no-mdns`, `--port`, `--udp-port`, `--dry-run` (no mueve el mouse real).
 La PC y el reloj deben estar en la **misma red Wi-Fi** (sin "aislamiento de clientes"/AP isolation, típico en redes de invitados).
+
+### Arrancar con Windows (opcional)
+
+Con el entorno ya creado (`run_server.bat` una vez) ejecuta en PowerShell, sin ser administrador:
+
+```powershell
+cd pc-server\windows
+Set-ExecutionPolicy -Scope Process Bypass
+.\autostart.ps1          # instala
+.\autostart.ps1 -Remove  # quita
+```
+
+Crea la tarea programada «AirWatch servidor» (al iniciar sesión, sin ventana). Para ver mensajes de error ejecuta `run_server.bat` en una consola. El láser necesita Tkinter (viene con el instalador de Python de python.org; marca *tcl/tk* al instalar).
 
 ## 2. App del reloj
 
@@ -126,9 +140,11 @@ muñeca → mover la mano a la derecha (2 veces) → hacia abajo (2 veces) → g
 |---|---|---|
 | Toque / pellizco | Impulso del acelerómetro (> 1.5 m/s², pasa-altas 5 Hz) sin que el reloj esté girando rápido; se confirma 60 ms después | Clic izquierdo (inmediato, sin retraso) |
 | Doble toque | Segundo toque 0.25–0.6 s después del primero (el primero ya hizo clic) | Deja el botón presionado (seleccionar / arrastrar). **Cualquier toque lo suelta** |
-| Giro rápido hacia palma abajo | Giro del antebrazo (> 5 rad/s) en el sentido contrario a «palma arriba»; el regreso se ignora 450 ms | Clic derecho |
-| Palma arriba sostenida (> 35° durante 0.45 s, casi quieto) | Entra en modo scroll: el cursor se congela y subir/bajar la mano desplaza la página, más rápido cuanto más inclines. Vuelve a la postura neutra para salir | Scroll |
-| Giro rápido hacia palma arriba | Igual que el de palma abajo, sentido contrario | Nada (asignable, p. ej. doble clic) |
+| Giro rápido hacia adentro (palma abajo) | Desde la posición normal (palma hacia adentro), giro del antebrazo (> 5 rad/s) hacia adentro; el regreso se ignora 450 ms | Clic derecho |
+| Palma arriba sostenida (> 35° respecto a tu posición normal, durante 0.45 s, casi quieto) | Entra en modo scroll: el cursor se congela y subir/bajar la mano desplaza la página, más rápido cuanto más inclines. Vuelve a la posición normal para salir | Scroll |
+| Giro rápido hacia afuera (palma arriba) | Igual que el anterior, sentido contrario | Nada (asignable, p. ej. doble clic) |
+
+**Posición normal:** es la de tu mano en reposo apuntando (palma hacia adentro, como dar la mano). El reloj la toma solo la primera vez que lo dejas quieto 1 s; si quedó mal tomada, usa *Ajustes → Fijar posición normal* (o el gesto asignado a «Centrar cursor») con la mano en reposo. Todo giro y el scroll se miden desde ella.
 
 El clic derecho y el scroll están en lados opuestos a propósito: poner la palma arriba despacio (scroll) no dispara el giro rápido. El scroll solo se activa con la palma arriba; con la palma abajo no pasa nada. Cada gesto se reasigna en *Ajustes → Gestos* (Nada, clic izq./der./central, doble clic, Atrás, Adelante, Arrastrar, Cambiar ventana = Alt+Tab, Centrar cursor, Pausar). Si dispara solo, sube el umbral; si no responde, bájalo. Al actualizar desde la versión anterior, las asignaciones de gestos se reinician a este mapa.
 
@@ -177,6 +193,21 @@ El clic derecho y el scroll están en lados opuestos a propósito: poner la palm
 
 ¹ Google solo documenta Ctrl+F5 para presentar. ² Según la versión de LibreOffice. Fuentes: ayuda de Google Docs Editors (atajos de Slides), ayuda de LibreOffice (atajos de Impress), documentación de SumatraPDF, guía de atajos de PowerPoint y de Acrobat. **Keynote queda sin verificar** y no se detecta solo (la detección de ventana es solo para Windows): fija el perfil a mano. En otras apps, «Genérico» usa → ← F5 Shift+F5 Esc B W.
 
+## 4d. Etapa 4: Bluetooth (reloj como ratón y teclado)
+
+El reloj se anuncia como un mouse + teclado Bluetooth normal (API estándar `BluetoothHidDevice`, Android 9+; el Watch 8 Classic con Windows ya se usa así en otras apps). **No hace falta el servidor ni el teléfono**: el teléfono como puente resultó innecesario porque el reloj puede hacerlo solo.
+
+**Emparejar (una vez):** reloj → *Ajustes → Conexión* = *Bluetooth* (o *Auto*) → *Emparejar Bluetooth* (queda visible 2 min; acepta los permisos de Bluetooth la primera vez) → en Windows: *Configuración → Bluetooth y dispositivos → Agregar dispositivo → Bluetooth → «AirWatch»*. Después el reloj se reconecta solo al último PC al iniciar la sesión.
+
+| Modo de *Conexión* | Qué hace |
+|---|---|
+| Wi-Fi (por defecto) | Como hasta ahora: servidor en la PC, láser, notas, perfiles por aplicación |
+| Bluetooth | Solo Bluetooth: cursor, clics, scroll y teclas (flechas, F5, Esc, B, W, ir a diapositiva) |
+| Auto | Intenta Bluetooth; si no está conectado, usa Wi-Fi. Con ambos activos manda por Bluetooth |
+
+**Qué funciona por Bluetooth:** cursor, clic izquierdo/derecho/central, doble clic, arrastrar, atrás/adelante, scroll, Alt+Tab y, en presentación, siguiente/anterior (toque + deslizar), iniciar (F5), terminar (Esc), pantalla negra/blanca e *ir a diapositiva*.
+**Qué no:** láser, notas, número de diapositiva, perfiles por aplicación (el reloj no sabe qué programa está en primer plano: usa los atajos de PowerPoint/Impress; Google Slides arranca con Ctrl+F5, no F5) y *Centrar cursor* en la PC. El temporizador sí funciona (es del reloj).
+
 ## 5. Protocolo y seguridad (resumen)
 
 - **Emparejamiento:** ECDH P-256 efímero + código de verificación de 6 dígitos que comparas en ambas pantallas (como Bluetooth "comparación numérica"). Ambos guardan un secreto de 32 B (en el reloj, cifrado con el Android Keystore).
@@ -205,7 +236,7 @@ cd watch-app
 - **JDK:** Gradle 8.11 no soporta Java 25 (el JBR de las versiones recientes de Android Studio). Compila con JDK 17 o 21 (`JAVA_HOME`, o *Settings → Build Tools → Gradle → Gradle JDK*).
 - Probado en un Galaxy Watch 8 con Windows 11. Los ejes del cursor pueden requerir *Invertir X/Y* según cómo lleves el reloj.
 - **Latencia <30 ms:** el reloj mide el RTT por UDP y lo muestra (la latencia de ida ≈ la mitad). En loopback el protocolo + cifrado cuesta ≈0.1 ms; el resto depende de tu router. `WIFI_MODE_FULL_LOW_LATENCY` solo se aplica con la app en primer plano y la pantalla encendida (por eso el modo mouse mantiene la pantalla activa).
-- El tráfico va por Wi-Fi gracias a `requestNetwork(TRANSPORT_WIFI)`, pero si el reloj no tiene Wi-Fi conectado a la red local, no hay conexión (la ruta vía celular llega en la Etapa 4).
+- El tráfico va por Wi-Fi gracias a `requestNetwork(TRANSPORT_WIFI)`, pero si el reloj no tiene Wi-Fi conectado a la red local, no hay conexión (para eso existe el modo Bluetooth (sección 4d); la ruta vía celular quedó descartada).
 - Apagado automático tras 10 min sin actividad (fijo por ahora).
 - Un solo PC emparejado por reloj en esta etapa.
 - Bisel/corona: el Watch 8 **Classic** tiene bisel físico (scroll con el bisel); el Watch 8 sin bisel usa los botones ▲▼.
@@ -216,3 +247,13 @@ cd watch-app
 - La estimación de diapositiva fuera de PowerPoint se desfasa si navegas con el teclado o el mouse de la PC.
 - Faltan de la especificación original: **tile y complicación** de Wear (dependencia extra que no pude compilar aquí). Los visores de PDF del navegador solo tienen pantalla completa (sin pantalla negra ni «ir a diapositiva»).
 - El movimiento viaja por UDP y el aviso «encender láser» por WebSocket, sin orden entre sí: al activar el láser el cursor real puede moverse unos píxeles.
+
+### Limitaciones del Galaxy Watch 8 / Wear OS (a tener en cuenta)
+
+- **Pantalla encendida:** los gestos y el modo presentación solo funcionan con la pantalla encendida (se bloquean con la pantalla apagada a propósito). Sube el tiempo de pantalla del reloj o deja que la app la mantenga encendida; esto gasta batería.
+- **Batería:** el giroscopio a 80–100 Hz más el Wi-Fi de baja latencia consumen bastante. Para sesiones largas, carga el reloj o usa Bluetooth. La app baja la frecuencia de sensores tras unos segundos de reposo.
+- **Wi-Fi:** el reloj y la PC deben estar en la misma red sin «aislamiento de clientes» (algunas redes de invitados y oficinas lo activan). Wear OS puede enrutar por el teléfono si el Wi-Fi se pierde; la app fuerza Wi-Fi pero no hay conexión sin él.
+- **Bluetooth HID:** depende de que Samsung/Wear OS exponga el perfil HID en tu versión; si *Emparejar* no muestra «AirWatch» en Windows o la conexión se cae, apaga y enciende el Bluetooth del reloj y quita el dispositivo en Windows para emparejar de nuevo. Un reloj mantiene un solo PC activo a la vez. No hay ratón en modo táctil (touchpad) todavía.
+- **Sensores:** sin un sensor de posición absoluta, apuntar es relativo (como un ratón): con el uso se desvía y se corrige con *Centrar cursor* o *Fijar posición normal*. Los gestos de toque dependen del acelerómetro; un toque muy suave o con el brazo en movimiento puede no detectarse.
+- **Sin probar en equipo real:** todo el código Android/Compose (incluido Bluetooth), la ventana del láser y la lectura de PowerPoint se escribieron sin SDK ni Windows de pruebas; se validan con simuladores. Reporta errores de compilación o comportamientos tal cual.
+- **Pendiente:** tile y complicación de Wear; un solo monitor para el láser; un solo PC emparejado por Wi-Fi.

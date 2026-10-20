@@ -26,8 +26,15 @@ enum class Wrist(val label: String) { LEFT("Izquierda"), RIGHT("Derecha") }
 enum class Gesture(val label: String) {
     TAP("Toque"),
     DOUBLE_TAP("Doble toque"),
-    ROLL_IN("Giro palma abajo"),     // giro rapido hacia el lado contrario a "palma arriba"
-    ROLL_OUT("Giro palma arriba"),   // sentido en que se midio el eje de roll (supinacion)
+    ROLL_IN("Giro adentro (palma abajo)"),     // giro rapido hacia el lado contrario a "palma arriba"
+    ROLL_OUT("Giro afuera (palma arriba)"),   // sentido en que se midio el eje de roll (supinacion)
+}
+
+/** Como se conecta el reloj con la PC. */
+enum class Transport(val label: String) {
+    WIFI("Wi-Fi (app del PC)"),
+    BLUETOOTH("Bluetooth (ratón)"),
+    AUTO("Auto: Bluetooth, respaldo Wi-Fi"),
 }
 
 /** Acciones que se pueden asignar a cada gesto (reasignables en Ajustes). */
@@ -63,6 +70,7 @@ data class Settings(
     val sendHz: Int = 80,           // 60..100 Hz de envio
     val invertX: Boolean = false,
     val invertY: Boolean = false,
+    val transport: Transport = Transport.WIFI,
     // --- Configuracion guiada (asistente)
     val wrist: Wrist = Wrist.LEFT,
     val setupDone: Boolean = false,

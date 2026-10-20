@@ -356,11 +356,11 @@ class Calibrator(
             Step.WRIST -> "¿En qué muñeca llevas el reloj?"
             Step.RIGHT -> "Mueve la mano a la DERECHA, rápido. Regrésala despacio."
             Step.DOWN -> "Ahora mueve la mano hacia ABAJO, rápido. Regrésala despacio."
-            Step.ROLL -> "Gira el antebrazo para poner la palma ARRIBA, rápido. Regrésalo despacio."
+            Step.ROLL -> "Palma hacia ADENTRO (como dar la mano). Gira el antebrazo hacia AFUERA hasta palma ARRIBA, rápido. Regrésalo despacio."
             Step.TRAIN_REST -> "Mueve la mano como apuntando. SIN hacer gestos."
             Step.TRAIN_TAP -> "Haz tu gesto de clic: toque o pellizco."
-            Step.TRAIN_ROLL_OUT -> "Gira rápido hacia PALMA ARRIBA y regrésalo."
-            Step.TRAIN_ROLL_IN -> "Gira rápido hacia PALMA ABAJO (clic derecho) y regrésalo."
+            Step.TRAIN_ROLL_OUT -> "Desde palma hacia adentro, gira rápido hacia AFUERA (palma ARRIBA) y regrésalo."
+            Step.TRAIN_ROLL_IN -> "Desde palma hacia adentro, gira rápido hacia ADENTRO (palma ABAJO, clic derecho) y regrésalo."
             Step.SUMMARY -> "Listo. Resumen:"
         }
         val progress = when (step) {

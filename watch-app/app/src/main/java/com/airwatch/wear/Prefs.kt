@@ -47,6 +47,7 @@ class Prefs(ctx: Context) {
             sendHz = sp.getInt("sendHz", d.sendHz),
             invertX = sp.getBoolean("invertX", d.invertX),
             invertY = sp.getBoolean("invertY", d.invertY),
+            transport = enumOf("transport", d.transport),
             wrist = enumOf("wrist", d.wrist),
             setupDone = sp.getBoolean("setupDone", d.setupDone),
             axisRight = vec("axisRight", d.axisRight),
@@ -77,7 +78,7 @@ class Prefs(ctx: Context) {
             .putFloat("sensitivity", s.sensitivity).putFloat("smoothing", s.smoothing)
             .putFloat("deadzone", s.deadzone).putFloat("accel", s.accel)
             .putInt("sendHz", s.sendHz).putBoolean("invertX", s.invertX).putBoolean("invertY", s.invertY)
-            .putString("wrist", s.wrist.name).putBoolean("setupDone", s.setupDone)
+            .putString("transport", s.transport.name).putString("wrist", s.wrist.name).putBoolean("setupDone", s.setupDone)
             .putVec("axisRight", s.axisRight).putVec("axisDown", s.axisDown).putVec("axisRoll", s.axisRoll)
             .putBoolean("gesturesEnabled", s.gesturesEnabled)
             .putFloat("tapThreshold", s.tapThreshold).putFloat("rollThreshold", s.rollThreshold)
@@ -91,6 +92,10 @@ class Prefs(ctx: Context) {
             .putString("presProfile", s.presProfile).putBoolean("presHaptics", s.presHaptics)
             .apply()
     }
+
+    var btHost: String?
+        get() = sp.getString("btHost", null)
+        set(v) = sp.edit().putString("btHost", v).apply()
 
     var lastHost: String?
         get() = sp.getString("lastHost", null)

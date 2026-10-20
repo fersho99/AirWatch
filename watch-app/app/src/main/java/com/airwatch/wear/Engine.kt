@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -56,6 +57,9 @@ object Engine {
     lateinit var store: PairingStore
         private set
     lateinit var link: WifiLink
+    lateinit var bt: BtHidLink
+    /** Estado del transporte activo (Wi-Fi o Bluetooth segun el ajuste). */
+    val linkState = MutableStateFlow(LinkState())
         private set
 
     val settings = MutableStateFlow(Settings())
@@ -118,13 +122,23 @@ object Engine {
         settings.value = prefs.load()
         link = WifiLink(app, scope, store, prefs)
         link.onServerMessage = ::onServerMessage
+        bt = BtHidLink(app, prefs)
+        scope.launch {
+            combine(link.state, bt.state, settings) { w, b, s ->
+                when (s.transport) {
+                    Transport.WIFI -> w
+                    Transport.BLUETOOTH -> b
+                    Transport.AUTO -> if (b.phase == Phase.CONNECTED) b else if (w.phase == Phase.CONNECTED) w else b
+                }
+            }.collect { linkState.value = it }
+        }
         timer.setTotal(settings.value.presMinutes * PresentationTimer.MIN, 0L)
         publishTimer()
         scope.launch {                         // al conectar: reaplicar el perfil fijo y arrancar con el laser apagado
-            link.state.collect { st ->
+            linkState.collect { st ->
                 if (st.phase == Phase.CONNECTED) {
                     val p = settings.value.presProfile
-                    if (p != "auto") link.sendCtrl(JSONObject().put("t", "profile").put("name", p))
+                    if (p != "auto") ctrl(JSONObject().put("t", "profile").put("name", p))
                 } else {
                     pointer.value = PointerMode.OFF
                     slide.value = null
@@ -185,7 +199,9 @@ object Engine {
         resetSignalState()
         acquireSensors(USER_SESSION)
         startSender()
-        link.start(pair, host)
+        val tr = settings.value.transport
+        if (tr != Transport.BLUETOOTH) link.start(pair, host)
+        if (tr != Transport.WIFI) bt.start()
     }
 
     fun stopSession() {
@@ -198,6 +214,7 @@ object Engine {
         sender?.interrupt(); sender = null
         releaseSensors(USER_SESSION)
         link.stop()
+        bt.stop()
         dragging.value = false
         scrollActive.value = false
         motion.cursorSuspended = false
@@ -322,7 +339,7 @@ object Engine {
     }
 
     private fun gesturesActive(s: Settings) =
-        s.gesturesEnabled && screenOn && running.value && link.state.value.phase == Phase.CONNECTED && !scrollPose.active
+        s.gesturesEnabled && screenOn && running.value && linkState.value.phase == Phase.CONNECTED && !scrollPose.active
 
     @Synchronized private fun acquireSensors(user: Int) {
         val first = sensorUsers == 0
@@ -416,15 +433,32 @@ object Engine {
         else -> false
     }
 
+    /** El transporte que lleva el movimiento y los comandos: Bluetooth si es el elegido, o el de respaldo en modo Auto. */
+    private fun useBt(): Boolean = when (settings.value.transport) {
+        Transport.WIFI -> false
+        Transport.BLUETOOTH -> true
+        Transport.AUTO -> bt.connected
+    }
+
+    private fun ctrl(m: JSONObject) { if (useBt()) bt.sendCtrl(m) else link.sendCtrl(m) }
+    private fun moveOut(dx: Int, dy: Int) { if (useBt()) bt.sendMove(dx, dy) else link.sendMove(dx, dy) }
+
+    /** Cambia de transporte; si hay sesion en curso la reinicia con el nuevo. */
+    fun setTransport(t: Transport) {
+        if (settings.value.transport == t) return
+        update { it.copy(transport = t) }
+        if (running.value) startSession(false, null)
+    }
+
     private fun btn(name: String, state: String, adj: IntArray? = null) {
         val m = JSONObject().put("t", "btn").put("b", name).put("s", state)
         if (adj != null) m.put("adj", JSONArray().put(adj[0]).put(adj[1]))
-        link.sendCtrl(m)
+        ctrl(m)
     }
 
     fun keyCombo(vararg keys: String) {
         touch()
-        link.sendCtrl(JSONObject().put("t", "key").put("k", JSONArray(keys.toList())))
+        ctrl(JSONObject().put("t", "key").put("k", JSONArray(keys.toList())))
     }
 
     private fun perform(action: Action, adj: IntArray?) {
@@ -470,7 +504,7 @@ object Engine {
         touch()
         val m = JSONObject().put("t", "pres").put("a", action)
         if (n != null) m.put("n", n)
-        link.sendCtrl(m)
+        ctrl(m)
     }
 
     fun startShow(fromCurrent: Boolean) {
@@ -501,10 +535,11 @@ object Engine {
     /** Enciende o apaga el laser. El movimiento de la mano solo mueve el punto mientras esta encendido. */
     fun setPointer(mode: PointerMode) {
         if (pointer.value == mode) return
+        if (mode != PointerMode.OFF && useBt()) { showToast("Láser: solo con Wi-Fi y la app del PC"); return }
         pointer.value = mode
         laserActiveMs = SystemClock.elapsedRealtime()
         motion.recenter()
-        link.sendCtrl(JSONObject().put("t", "ptr").put("m", mode.wire))
+        ctrl(JSONObject().put("t", "ptr").put("m", mode.wire))
         if (presenting.value && settings.value.presHaptics) haptic(if (mode == PointerMode.OFF) 15 else 30)
     }
 
@@ -541,11 +576,11 @@ object Engine {
     fun cycleProfile() {
         val next = Profiles.next(settings.value.presProfile)
         update { it.copy(presProfile = next) }
-        link.sendCtrl(JSONObject().put("t", "profile").put("name", next))
+        ctrl(JSONObject().put("t", "profile").put("name", next))
     }
 
     fun setSlidesTotal(n: Int?) {
-        link.sendCtrl(JSONObject().put("t", "slides_total").put("n", n ?: JSONObject.NULL))
+        ctrl(JSONObject().put("t", "slides_total").put("n", n ?: JSONObject.NULL))
     }
 
     private fun onServerMessage(m: JSONObject) {
@@ -628,7 +663,7 @@ object Engine {
                     val dx = out[0].coerceIn(-32768, 32767)
                     val dy = out[1].coerceIn(-32768, 32767)
                     history.add(now, dx, dy)
-                    link.sendMove(dx, dy)
+                    moveOut(dx, dy)
                 }
 
                 // Scroll por inclinacion sostenida: tasa (muescas/s) integrada aqui
@@ -639,7 +674,7 @@ object Engine {
                     if (n != 0) {
                         scrollRateAcc -= n
                         touch()
-                        link.sendCtrl(JSONObject().put("t", "scroll").put("h", 0).put("v", -n))   // v>0 = rueda arriba
+                        ctrl(JSONObject().put("t", "scroll").put("h", 0).put("v", -n))   // v>0 = rueda arriba
                     }
                 } else scrollRateAcc = 0f
 
@@ -659,7 +694,7 @@ object Engine {
     // ------------------------------------------------------------ acciones de la UI
     fun button(name: String, state: String) {
         touch()
-        link.sendCtrl(JSONObject().put("t", "btn").put("b", name).put("s", state))
+        ctrl(JSONObject().put("t", "btn").put("b", name).put("s", state))
     }
 
     /** `deltaPx` del bisel/corona; ~40 px = una muesca de rueda en el PC. */
@@ -669,15 +704,21 @@ object Engine {
         if (notches != 0) {
             scrollAcc -= notches * 40f
             touch()
-            link.sendCtrl(JSONObject().put("t", "scroll").put("h", 0).put("v", -notches))
+            ctrl(JSONObject().put("t", "scroll").put("h", 0).put("v", -notches))
         }
+    }
+
+    /** Toma la postura actual de la mano como "normal" (palma hacia adentro): el scroll se mide desde aqui. */
+    fun fixNeutral() {
+        scrollPose.setNeutralFromCurrent()
+        haptic(40)
     }
 
     fun recenter() {
         touch()
         motion.recenter()
         scrollPose.setNeutralFromCurrent()
-        link.sendCtrl(JSONObject().put("t", "recenter"))
+        ctrl(JSONObject().put("t", "recenter"))
     }
 
     fun toggleTracking() {
