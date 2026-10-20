@@ -57,10 +57,11 @@ object Engine {
     lateinit var store: PairingStore
         private set
     lateinit var link: WifiLink
+        private set
     lateinit var bt: BtHidLink
+        private set
     /** Estado del transporte activo (Wi-Fi o Bluetooth segun el ajuste). */
     val linkState = MutableStateFlow(LinkState())
-        private set
 
     val settings = MutableStateFlow(Settings())
     val tracking = MutableStateFlow(true)
